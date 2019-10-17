@@ -29,7 +29,8 @@ class ObjectDetector:
 
     def draw_boxes(self, frame, object_detections):
         v = Visualizer(frame[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
-        new_frame = v.draw_instance_predictions(object_detections)
+        v = v.draw_instance_predictions(object_detections)
+        new_frame = v.get_image()[:, :, ::-1]
         return new_frame
 
 
