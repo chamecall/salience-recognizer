@@ -1,15 +1,15 @@
-import detectron2
 from detectron2.utils.logger import setup_logger
-setup_logger()
-
-import numpy as np
 import cv2
+from Colors import Color
+
+setup_logger()
 
 # import some common detectron2 utilities
 from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
 from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog
+
 
 class ObjectDetector:
     def __init__(self, cfg_path, weights_path, thresh=0.5):
@@ -26,13 +26,15 @@ class ObjectDetector:
         outputs = outputs['instances'].to('cpu')
         return outputs
 
-
     def draw_boxes(self, frame, object_detections):
-        v = Visualizer(frame[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
-        v = v.draw_instance_predictions(object_detections)
-        new_frame = v.get_image()[:, :, ::-1]
-        return new_frame
+        # detections format: [[box, box...], [label_num, label_num...]]
 
+        boxes, classes = object_detections
 
+        for box, class_num in zip(boxes, classes):
+            box = [int(num) for num in box]
+            cv2.rectangle(frame, tuple(box[:2]), tuple(box[2:]), Color.YELLOW, 2)
+            cv2.putText(frame, f'{self.classes[class_num]}', (box[0], box[1] + 30), cv2.FONT_HERSHEY_SIMPLEX, 1.5, Color.RED, 3)
 
+        return frame
 

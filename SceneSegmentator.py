@@ -1,5 +1,6 @@
 import cv2
 import imutils
+from Colors import Color
 
 class SceneSegmentator:
     def __init__(self, batch_size, min_thresh=30.0, max_thresh=33.0):
@@ -8,7 +9,7 @@ class SceneSegmentator:
         self.min_thresh = min_thresh
         self.max_thresh = max_thresh
         self.subtractor = cv2.bgsegm.createBackgroundSubtractorGMG()
-        self.captured = self.new_scene_frame_extracted = False
+        self.may_capture = self.new_scene_frame_extracted = True
 
     def push_frame(self, frame):
         self.check_new_scene(frame)
@@ -37,9 +38,13 @@ class SceneSegmentator:
         H, W = mask.shape[:2]
         p = int((cv2.countNonZero(mask) / float(W * H)) * 100)
 
-        if p < self.min_thresh and not self.captured:
-            self.captured = self.new_scene_frame_extracted = True
+        cv2.putText(frame, str(p), (300, 300), cv2.FONT_HERSHEY_SIMPLEX, 2, Color.BLACK, 2)
+
+        if p < self.min_thresh and not self.may_capture:
+            self.may_capture = True
+
+        elif self.may_capture and p >= self.max_thresh:
+            self.new_scene_frame_extracted = True
             self.batch = []
-        elif self.captured and p >= self.max_thresh:
-            self.captured = False
+            self.may_capture = False
 

@@ -8,9 +8,11 @@ class Captioner:
 
 
     def caption_img(self, frame):
+        is_frame_new = False
         if frame is not None:
             img_name = 'to_caption.jpg'
             cv2.imwrite(img_name, frame)
             caption = self.caption_bot.file_caption(img_name)
             self.prev_caption = caption
-        return self.prev_caption
+            is_frame_new = True
+        return self.prev_caption, is_frame_new

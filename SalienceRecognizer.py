@@ -1,44 +1,38 @@
 import cv2
 
 from Colors import Color
-from DB import DB
-from DetectionReader import DetectionReader
-from Enums import CommandType, MediaType
-from ImageOverlay import ImageOverlay
-from ImageProcessing import generate_thought_balloon_by_text
-from Media import Media
-from TextOverlay import TextOverlay
-from VideoOverlay import VideoOverlay
+import string
 from VideoReader import VideoReader
 from ObjectDetector import ObjectDetector
 from FaceRecognizer import FaceRecognizer
 from EmotionRecognizer import EmotionRecognizer
-#from Captioner import Captioner
+from Captioner import Captioner
 from SceneSegmentator import SceneSegmentator
 from ClothesDetector import ClothesDetector
 from tqdm import trange
+from JokePicker import JokePicker
+from DetectionReader import DetectionReader
 from Captioner import Captioner
 
 class SalienceRecognizer:
     EMOTION_PROB_THRESH = 0
 
     def __init__(self):
-        self.output_video_file_name = '/home/algernon/samba/video_queue/SalienceRecognizer/output.mkv'
+        self.output_video_file_name = 'output.mkv'
         self.emotion_recognizer = EmotionRecognizer(self.EMOTION_PROB_THRESH)
-        #self.captioner = Captioner('/home/algernon/a-PyTorch-Tutorial-to-Image-Captioning/weights/BEST_checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar',
-        #                           '/home/algernon/a-PyTorch-Tutorial-to-Image-Captioning/weights/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json')
+
         self.segmentator = None
-        self.clothes_detector = ClothesDetector("yolo/df2cfg/yolov3-df2.cfg", "yolo/weights/yolov3-df2_15000.weights", "yolo/df2cfg/df2.names")
-        self.face_recognizer = FaceRecognizer()
+        #self.clothes_detector = ClothesDetector("yolo/df2cfg/yolov3-df2.cfg", "yolo/weights/yolov3-df2_15000.weights", "yolo/df2cfg/df2.names")
+        #self.face_recognizer = FaceRecognizer()
         self.video_file_name = '/home/algernon/Downloads/BestActors.mp4'
         self.captioner = Captioner()
         self.video_reader = VideoReader(self.video_file_name)
-
+        self.joke_picker = JokePicker('joke_picker/shortjokes.csv', 'joke_picker/joke_picker.fse')
         self.video_writer = cv2.VideoWriter(self.output_video_file_name, cv2.VideoWriter_fourcc(*"XVID"),
                                             self.video_reader.fps,
                                             (self.video_reader.width, self.video_reader.height))
         self.segmentator = SceneSegmentator(self.video_reader.fps * 5)
-
+        self.object_detection_reader = DetectionReader('detections.json')
         self.object_detector = ObjectDetector('./configs/COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml',
                                                 'https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_101_FPN_3x/137851257/model_final_f6e8b1.pkl')
 
@@ -46,15 +40,17 @@ class SalienceRecognizer:
     def launch(self):
         for _ in trange(self.video_reader.frame_count):
             frame = self.video_reader.get_next_frame()
-            #cur_frame_num = self.video_reader.cur_frame_num
+
+
+            cur_frame_num = self.video_reader.cur_frame_num
 
             # emotions
             #emotion_detections = self.detect_emotions_on_frame(frame)
-            emotion_detections = []
-            emotions_per_frame = []
-            for emotion_pos, emotion in emotion_detections:
-                emotions_per_frame.append((emotion_pos, emotion))
-                self.draw_emotion_box(frame, emotion_pos, emotion)
+            # emotion_detections = []
+            # emotions_per_frame = []
+            # for emotion_pos, emotion in emotion_detections:
+            #     emotions_per_frame.append((emotion_pos, emotion))
+            #     self.draw_emotion_box(frame, emotion_pos, emotion)
 
             self.segmentator.push_frame(frame)
 
@@ -63,23 +59,67 @@ class SalienceRecognizer:
             clothes_detections = []
 
             self.draw_clothes(frame, clothes_detections)
-
+            caption, caption_changed = self.get_caption(frame)
+            self.show_caption(frame, caption)
             # objects
-            object_detections_per_frame = self.object_detector.forward(frame)
-
-            frame = self.object_detector.draw_boxes(frame, object_detections_per_frame)
-
+            #object_detections_per_frame = self.object_detector.forward(frame)
+            object_detections = self.object_detection_reader.get_detections_per_specified_frame(cur_frame_num)
+            frame = self.object_detector.draw_boxes(frame, object_detections)
             #labels_per_frame = [detection[0] for detection in object_detections_per_frame]
+            if caption_changed:
+                context = self.generate_context(object_detections, caption)
+                jokes = self.joke_picker.pick_jokes_by_context(context)
+            else:
+                jokes = self.joke_picker.prev_jokes
 
-            self.show_caption(frame)
+            self.apply_jokes_on_frame(jokes, frame)
+
             cv2.imshow('frame', frame)
             self.video_writer.write(frame)
             cv2.waitKey(1)
 
 
-    def show_caption(self, frame):
+    def apply_jokes_on_frame(self, jokes, frame):
+        height = frame.shape[0]
+        joke_height = 40
+        joke_y = height - joke_height * len(jokes)
+        for joke in jokes:
+            cv2.putText(frame, joke, (0, joke_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, Color.GOLD, 2)
+            joke_y += joke_height
+
+    def generate_context(self, detections, caption: str):
+        # detections format: [[box, box...], [label_num, label_num...]]
+        context = self.exclude_side_phrases_from_caption(caption).rstrip()
+        # exclude punctuations
+        context = context.translate(str.maketrans('', '', string.punctuation))
+        additional_info = self.get_objects_info(context, detections).lstrip()
+
+        context = f'{context} {additional_info}'
+        return context
+
+
+
+    def get_objects_info(self, caption, detections):
+        classes = self.object_detector.classes
+        labels = set(classes[class_num] for class_num in detections[1])
+        additional_info = ' '.join([label for label in labels if label not in caption])
+        return additional_info
+
+    def exclude_side_phrases_from_caption(self, caption):
+        out_of_place_phrases = ["I think it's", ]
+        for phrase in out_of_place_phrases:
+            if caption.startswith(phrase):
+                caption = caption[len(phrase):]
+        return caption
+
+    def get_caption(self, frame):
         most_clear_img = self.segmentator.get_most_clear_frame()
-        caption = self.captioner.caption_img(most_clear_img)
+
+
+        caption, changed = self.captioner.caption_img(most_clear_img)
+        return caption, changed
+
+    def show_caption(self, frame, caption):
         cv2.putText(frame, caption, (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, Color.BLUE, 2)
 
     def draw_clothes(self, frame, clothes_detections):
