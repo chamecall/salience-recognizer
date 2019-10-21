@@ -5,7 +5,8 @@ class FaceRecognizer:
     def __init__(self):
         pass
 
-    def recognize_faces_on_image(self, image):
+    @staticmethod
+    def recognize_faces_on_image(image):
         # return in format [((l, t), (r, b)), ...]
         rev_image = image[:, :, ::-1]
         face_locations = face_recognition.face_locations(rev_image, number_of_times_to_upsample=0, model='cnn')

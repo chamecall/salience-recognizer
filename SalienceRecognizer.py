@@ -13,9 +13,13 @@ from tqdm import trange
 from JokePicker import JokePicker
 from DetectionReader import DetectionReader
 from Captioner import Captioner
+from AgeGenderPredictor import AgeGenderPredictor
+from BeautyEstimator import BeautyEstimator
 
 class SalienceRecognizer:
     EMOTION_PROB_THRESH = 0
+
+
 
     def __init__(self):
         self.output_video_file_name = 'output.mkv'
@@ -23,7 +27,6 @@ class SalienceRecognizer:
 
         self.segmentator = None
         #self.clothes_detector = ClothesDetector("yolo/df2cfg/yolov3-df2.cfg", "yolo/weights/yolov3-df2_15000.weights", "yolo/df2cfg/df2.names")
-        #self.face_recognizer = FaceRecognizer()
         self.video_file_name = '/home/algernon/Downloads/BestActors.mp4'
         self.captioner = Captioner()
         self.video_reader = VideoReader(self.video_file_name)
@@ -35,22 +38,33 @@ class SalienceRecognizer:
         self.object_detection_reader = DetectionReader('detections.json')
         self.object_detector = ObjectDetector('./configs/COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml',
                                                 'https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_101_FPN_3x/137851257/model_final_f6e8b1.pkl')
-
+        self.age_gender_predictor = AgeGenderPredictor()
+        self.beauty_estimator = BeautyEstimator('/home/algernon/isBeauty/weights/epoch_50.pkl')
 
     def launch(self):
         for _ in trange(self.video_reader.frame_count):
             frame = self.video_reader.get_next_frame()
-
-
+            age_gender_prediction = []
+            beauty_score = []
             cur_frame_num = self.video_reader.cur_frame_num
 
+            # faces
+            detected_faces = FaceRecognizer.recognize_faces_on_image(frame)
             # emotions
-            #emotion_detections = self.detect_emotions_on_frame(frame)
-            # emotion_detections = []
+            # emotion_detections = self.detect_emotions_on_frame(frame, detected_faces)
             # emotions_per_frame = []
             # for emotion_pos, emotion in emotion_detections:
             #     emotions_per_frame.append((emotion_pos, emotion))
             #     self.draw_emotion_box(frame, emotion_pos, emotion)
+
+            # age gender
+            if detected_faces:
+                age_gender_predictions = self.age_gender_predictor.detect_age_dender_by_faces(frame, detected_faces)
+                main_person_index = self.get_main_person_by_face_size(detected_faces)
+                age_gender_prediction.append(age_gender_predictions[main_person_index])
+
+                beauty_score = self.beauty_estimator.estimate_beauty_by_face(detected_faces, frame)
+                self.apply_beauty_scores_on_frame(frame, detected_faces, beauty_score)
 
             self.segmentator.push_frame(frame)
 
@@ -67,7 +81,8 @@ class SalienceRecognizer:
             frame = self.object_detector.draw_boxes(frame, object_detections)
             #labels_per_frame = [detection[0] for detection in object_detections_per_frame]
             if caption_changed:
-                context = self.generate_context(object_detections, caption)
+                context = self.generate_context(object_detections, caption, age_gender_prediction, beauty_score)
+                print(context)
                 jokes = self.joke_picker.pick_jokes_by_context(context)
             else:
                 jokes = self.joke_picker.prev_jokes
@@ -78,6 +93,11 @@ class SalienceRecognizer:
             self.video_writer.write(frame)
             cv2.waitKey(1)
 
+    def apply_beauty_scores_on_frame(self, frame, faces, beauty_scores):
+        for i, face in enumerate(faces):
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            tl_x, tl_y = face[0]
+            cv2.putText(frame, 'Beauty:' + str(beauty_scores[i]), (tl_x - 5, tl_y + 30), font, 1, (0, 0, 255), 2)
 
     def apply_jokes_on_frame(self, jokes, frame):
         height = frame.shape[0]
@@ -87,17 +107,45 @@ class SalienceRecognizer:
             cv2.putText(frame, joke, (0, joke_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, Color.GOLD, 2)
             joke_y += joke_height
 
-    def generate_context(self, detections, caption: str):
+    def generate_context(self, detections, caption: str, age_gender: list, beaty_score: list):
         # detections format: [[box, box...], [label_num, label_num...]]
         context = self.exclude_side_phrases_from_caption(caption).rstrip()
         # exclude punctuations
         context = context.translate(str.maketrans('', '', string.punctuation))
-        additional_info = self.get_objects_info(context, detections).lstrip()
-
-        context = f'{context} {additional_info}'
+        objects_info = self.get_objects_info(context, detections).lstrip()
+        beauty_info = self.get_beauty_info(beaty_score)
+        age_gender_info = self.get_age_gender_info(age_gender)
+        context = f'{beauty_info} {age_gender_info} {objects_info} {context} '
         return context
 
+    def get_beauty_info(self, beauty_score):
+        result = ''
+        for score in beauty_score:
+            result = self.beauty_score2desc(score)
+        return result
 
+    def get_main_person_by_face_size(self, faces):
+        main_person = max(enumerate(faces), key=lambda face: (face[1][1][0] - face[1][0][0]) * (face[1][1][1] - face[1][0][1]))
+        return main_person[0]
+
+    def get_age_gender_info(self, age_gender_detection):
+        result = ''
+        for age_gender in age_gender_detection:
+            result = f'{age_gender[0]} {self.age2desc(age_gender[1])}'
+        return result
+
+    def beauty_score2desc(self, beauty_score: float):
+        if beauty_score < 4.1: return 'unattractive'
+        elif 4.1 <= beauty_score <= 4.2: return 'ordinary'
+        elif 4.2 <= beauty_score <= 4.5: return 'attractive'
+        else: return 'beautiful'
+
+    def age2desc(self, age: int):
+        if age <= 12: return 'child'
+        elif 13 <= age <= 18: return 'teen'
+        elif 19 <= age <= 25: return 'young'
+        elif 26 <= age <= 60: return 'mature'
+        else: return 'old'
 
     def get_objects_info(self, caption, detections):
         classes = self.object_detector.classes
@@ -132,9 +180,8 @@ class SalienceRecognizer:
             cv2.rectangle(frame, (x1 - 2, y1 - 25), (x1 + 8.5 * len(text), y1), color, -1)
             cv2.putText(frame, text, (x1, y1 - 5), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
-    def detect_emotions_on_frame(self, frame):
+    def detect_emotions_on_frame(self, frame, detected_faces):
         #return list of items of the following format: ((lt_point: tuple, rb_point: tuple), (emotion: str, prob: int))
-        detected_faces = self.face_recognizer.recognize_faces_on_image(frame)
         emotions = []
         for face_pos in detected_faces:
             (l, t), (r, b) = face_pos
