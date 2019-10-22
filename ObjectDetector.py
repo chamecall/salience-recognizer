@@ -20,11 +20,18 @@ class ObjectDetector:
         self.cfg['_BASE_'] = 'configs/object_detector_RFCN_LLA'
         self.predictor = DefaultPredictor(self.cfg)
         self.classes = MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]).get("thing_classes", None)
+        self.prev_detections = [[], []]
 
-    def forward(self, img):
-        outputs = self.predictor(img)
-        outputs = outputs['instances'].to('cpu')
-        return outputs
+    def forward(self, img, get_prev=False):
+        if not get_prev:
+            outputs = self.predictor(img)
+            outputs = outputs['instances'].to('cpu')
+            self.prev_detections = outputs
+
+            fields = outputs.get_fields()
+            boxes, classes = fields['pred_boxes'].tensor.tolist(), fields['pred_classes'].tolist()
+            self.prev_detections = [boxes, classes]
+        return self.prev_detections
 
     def draw_boxes(self, frame, object_detections):
         # detections format: [[box, box...], [label_num, label_num...]]

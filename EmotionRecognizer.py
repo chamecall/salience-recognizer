@@ -18,13 +18,32 @@ from cust_models import VGG
 
 class EmotionRecognizer:
     NET_INPUT_SIZE = (48, 48)
-
+    print(torch.cuda.is_available())
+    print(torch.cuda.is_available())
+    print(torch.cuda.is_available())
 
     def __init__(self, prob_thresh):
         self.class_names = ['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise', 'Neutral']
         self.net = VGG('VGG19')
         self.checkpoint = torch.load(os.path.join('FER2013_VGG19', 'PrivateTest_model.t7'))
         self.prob_thresh = prob_thresh
+        self.prev_detections = []
+
+    def detect_emotions_on_frame(self, frame, detected_faces, get_prev=False):
+        # return list of items of the following format: ((lt_point: tuple, rb_point: tuple), (emotion: str, prob: int))
+        emotions = []
+        if not get_prev:
+            for face_pos in detected_faces:
+                (l, t), (r, b) = face_pos
+                face_img = frame[t:b, l:r]
+                emotion = self.recognize_emotion_by_face(face_img)
+                if emotion:
+                    emotions.append((face_pos, emotion))
+            self.prev_detections = emotions
+        else:
+            emotions = self.prev_detections
+        return emotions
+
 
     def recognize_emotion_by_face(self, face_img):
         face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
@@ -43,7 +62,7 @@ class EmotionRecognizer:
         ncrops, c, h, w = np.shape(inputs)
         inputs = inputs.view(-1, c, h, w)
         inputs = inputs.cuda()
-        inputs = Variable(inputs, volatile=True)
+        inputs = Variable(inputs)
         outputs = self.net(inputs)
 
         outputs_avg = outputs.view(ncrops, -1).mean(0)  # avg over crops

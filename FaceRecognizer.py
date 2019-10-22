@@ -7,6 +7,7 @@ class FaceRecognizer:
 
     @staticmethod
     def recognize_faces_on_image(image):
+
         # return in format [((l, t), (r, b)), ...]
         rev_image = image[:, :, ::-1]
         face_locations = face_recognition.face_locations(rev_image, number_of_times_to_upsample=0, model='cnn')
@@ -14,7 +15,6 @@ class FaceRecognizer:
         for top, right, bottom, left in face_locations:
             face_location = (left, top), (right, bottom)
             ret_face_locations.append(face_location)
-
         return ret_face_locations
 
 

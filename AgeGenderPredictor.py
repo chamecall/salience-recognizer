@@ -29,6 +29,8 @@ class AgeGenderPredictor:
                          cache_subdir=model_dir)
         self.model.load_weights(fpath)
 
+        self.prev_detections = []
+
     @classmethod
     def draw_label(cls, image, point, label, font=cv2.FONT_HERSHEY_SIMPLEX,
                    font_scale=1, thickness=2):
@@ -71,26 +73,31 @@ class AgeGenderPredictor:
         resized_img = np.array(resized_img)
         return resized_img, (x_a, y_a, x_b - x_a, y_b - y_a)
 
-    def detect_age_dender_by_faces(self, frame, faces):
-        faces = [(face[0][0], face[0][1], face[1][0] - face[0][0], face[1][1] - face[0][1]) for face in faces]
-        face_imgs = np.empty((len(faces), self.face_size, self.face_size, 3))
-        predicted_genders, predicted_ages = [], []
-        for i, face in enumerate(faces):
-            face_img, cropped = self.crop_face(frame, face, margin=40, size=self.face_size)
-            (x, y, w, h) = cropped
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 200, 0), 2)
-            face_imgs[i, :, :, :] = face_img
-        if len(face_imgs) > 0:
-            # predict ages and genders of the detected faces
-            results = self.model.predict(face_imgs)
-            predicted_genders = results[0]
-            ages = np.arange(0, 101).reshape(101, 1)
-            predicted_ages = results[1].dot(ages).flatten()
-        # draw results
-        predicted_ages = [int(age) for age in predicted_ages]
-        predicted_genders = ['female' if genders[0] > 0.5 else 'male' for genders in predicted_genders]
-        for i, face in enumerate(faces):
-            label = "{}, {}".format(predicted_ages[i], predicted_genders[i])
-            self.draw_label(frame, (face[0], face[1]), label)
-        return tuple(zip(predicted_genders, predicted_ages))
+    def detect_age_dender_by_faces(self, frame, faces, get_prev=False):
+        if not get_prev:
+            faces = [(face[0][0], face[0][1], face[1][0] - face[0][0], face[1][1] - face[0][1]) for face in faces]
+            face_imgs = np.empty((len(faces), self.face_size, self.face_size, 3))
+            predicted_genders, predicted_ages = [], []
+            for i, face in enumerate(faces):
+                face_img, cropped = self.crop_face(frame, face, margin=40, size=self.face_size)
+                (x, y, w, h) = cropped
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 200, 0), 2)
+                face_imgs[i, :, :, :] = face_img
+            if len(face_imgs) > 0:
+                # predict ages and genders of the detected faces
+                results = self.model.predict(face_imgs)
+                predicted_genders = results[0]
+                ages = np.arange(0, 101).reshape(101, 1)
+                predicted_ages = results[1].dot(ages).flatten()
+            # draw results
+            predicted_ages = [int(age) for age in predicted_ages]
+            predicted_genders = ['female' if genders[0] > 0.5 else 'male' for genders in predicted_genders]
+            for i, face in enumerate(faces):
+                label = "{}, {}".format(predicted_ages[i], predicted_genders[i])
+                self.draw_label(frame, (face[0], face[1]), label)
+            self.prev_detections = tuple(zip(predicted_genders, predicted_ages))
+
+        return self.prev_detections
+
+
 
