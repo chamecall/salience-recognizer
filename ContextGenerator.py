@@ -38,7 +38,8 @@ class ContextGenerator:
             result = f'{age_gender[0]} {self.age2desc(age_gender[1])}'
         return result
 
-    def beauty_score2desc(self, beauty_score: float):
+    @staticmethod
+    def beauty_score2desc(beauty_score: float):
         if beauty_score < 4.1:
             return 'unattractive'
         elif 4.1 <= beauty_score <= 4.2:

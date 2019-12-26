@@ -94,7 +94,7 @@ class AgeGenderPredictor:
             predicted_genders = ['female' if genders[0] > 0.5 else 'male' for genders in predicted_genders]
             for i, face in enumerate(faces):
                 label = "{}, {}".format(predicted_ages[i], predicted_genders[i])
-                self.draw_label(frame, (face[0], face[1]), label)
+                #self.draw_label(frame, (face[0], face[1]), label)
             self.prev_detections = tuple(zip(predicted_genders, predicted_ages))
 
         return self.prev_detections
