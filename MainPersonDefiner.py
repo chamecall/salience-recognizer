@@ -1,8 +1,6 @@
-
 class MainPersonDefiner:
     def __init__(self):
         self.prev_main_person_index = None
-
 
     def get_main_person_by_face_size(self, faces, get_prev=False):
 

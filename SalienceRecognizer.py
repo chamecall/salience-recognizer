@@ -14,7 +14,7 @@ from MainPersonDefiner import MainPersonDefiner
 from ObjectDetector import ObjectDetector
 from SceneSegmentator import SceneSegmentator
 from VideoReader import VideoReader
-import moviepy.editor as mpe
+from SpeechRecognizer import SpeechRecognizer
 
 
 class SalienceRecognizer:
@@ -37,9 +37,6 @@ class SalienceRecognizer:
                                             (self.video_reader.width, self.video_reader.height))
         self.face_recognizer = FaceRecognizer()
 
-        
-
-
         self.segmentator = SceneSegmentator(self.video_reader.fps * self.DELAY_TO_DETECT_IN_SECS)
         self.object_detection_reader = DetectionReader('detections.json')
         self.object_detector = ObjectDetector('./configs/COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml',
@@ -48,39 +45,40 @@ class SalienceRecognizer:
         self.beauty_estimator = BeautyEstimator('/home/algernon/DNNS/isBeauty/weights/epoch_50.pkl')
         self.main_person_definer = MainPersonDefiner()
         self.context_generator = ContextGenerator(self.object_detector.classes)
-
-
-
-
-
+        self.speech_recognizer = SpeechRecognizer(self.video_file_name)
 
     def launch(self):
         for _ in trange(self.video_reader.frame_count):
             frame = self.video_reader.get_next_frame()
-            cur_frame_num = self.video_reader.cur_frame_num
 
-            frame_for_detection = self.is_there_needing_to_update(frame)
+            frame_for_detection = self.get_clearest_frame(frame)
             use_prev_detects = True if frame_for_detection is None else False
+
+            speech = self.speech_recognizer.rewind_audio(self.video_reader.get_cur_timestamp())
 
             if not use_prev_detects:
                 # faces
-                detected_faces = self.face_recognizer.recognize_faces_on_image(frame_for_detection, get_prev=use_prev_detects)
-
-
+                detected_faces = self.face_recognizer.recognize_faces_on_image(frame_for_detection,
+                                                                               get_prev=use_prev_detects)
 
             # main person
-            main_person_index = self.main_person_definer.get_main_person_by_face_size(detected_faces, get_prev=use_prev_detects)
+            main_person_index = self.main_person_definer.get_main_person_by_face_size(detected_faces,
+                                                                                      get_prev=use_prev_detects)
 
             # emotions
-            emotion_detections = self.emotion_recognizer.detect_emotions_on_frame(frame_for_detection, detected_faces, get_prev=use_prev_detects)
+            emotion_detections = self.emotion_recognizer.detect_emotions_on_frame(frame_for_detection, detected_faces,
+                                                                                  get_prev=use_prev_detects)
 
             emotion = [emotion_detections[main_person_index]] if main_person_index is not None else []
 
             # age gender
-            age_gender_predictions = self.age_gender_predictor.detect_age_dender_by_faces(frame_for_detection, detected_faces, get_prev=use_prev_detects)
+            age_gender_predictions = self.age_gender_predictor.detect_age_dender_by_faces(frame_for_detection,
+                                                                                          detected_faces,
+                                                                                          get_prev=use_prev_detects)
             age_gender_prediction = [age_gender_predictions[main_person_index]] if main_person_index is not None else []
             # beauty
-            beauty_scores = self.beauty_estimator.estimate_beauty_by_face(frame_for_detection, detected_faces, get_prev=use_prev_detects)
+            beauty_scores = self.beauty_estimator.estimate_beauty_by_face(frame_for_detection, detected_faces,
+                                                                          get_prev=use_prev_detects)
             beauty_score = [beauty_scores[main_person_index]] if main_person_index is not None else []
             # clothes
             # clothes_detections = self.clothes_detector.detect_clothes(frame)
@@ -88,14 +86,14 @@ class SalienceRecognizer:
             # self.draw_clothes(frame, clothes_detections)
 
             # caption
-            #caption = self.captioner.caption_img(frame_for_detection, get_prev=use_prev_detects)
+            # caption = self.captioner.caption_img(frame_for_detection, get_prev=use_prev_detects)
 
             # objects
             object_detections = self.object_detector.forward(frame_for_detection, get_prev=use_prev_detects)
-            #object_detections = self.object_detection_reader.get_detections_per_specified_frame(cur_frame_num)
+            # object_detections = self.object_detection_reader.get_detections_per_specified_frame(cur_frame_num)
             # context = self.context_generator.generate_context(object_detections, caption, emotion, age_gender_prediction,
             #                                                   beauty_score, get_prev=use_prev_detects)
-            #cv2.putText(frame, 'Context:', (0, 360), cv2.FONT_HERSHEY_SIMPLEX, 0.8, Color.GOLD, 2)
+            # cv2.putText(frame, 'Context:', (0, 360), cv2.FONT_HERSHEY_SIMPLEX, 0.8, Color.GOLD, 2)
             # cv2.putText(frame, context, (0, 400), cv2.FONT_HERSHEY_SIMPLEX, 0.8, Color.GOLD, 2)
             # jokes = self.joke_picker.pick_jokes_by_context(context, get_prev=use_prev_detects)
 
@@ -115,11 +113,11 @@ class SalienceRecognizer:
             tl_x, tl_y = face[i]
             cv2.putText(frame, f'{age_gender_predictions[i]}', (tl_x - 5, tl_y + 60), self.FONT, 1, Color.BLACK, 2)
 
-
     def apply_beauty_scores_on_frame(self, frame, faces, beauty_scores):
         for i, face in enumerate(faces):
             tl_x, tl_y = face[i]
-            cv2.putText(frame, f'{ContextGenerator.beauty_score2desc(beauty_scores[i])} ({beauty_scores[i]})', (tl_x - 5, tl_y + 30), self.FONT, 1, Color.BLACK, 2)
+            cv2.putText(frame, f'{ContextGenerator.beauty_score2desc(beauty_scores[i])} ({beauty_scores[i]})',
+                        (tl_x - 5, tl_y + 30), self.FONT, 1, Color.BLACK, 2)
 
     def apply_jokes_on_frame(self, jokes, frame):
         height = frame.shape[0]
@@ -133,7 +131,7 @@ class SalienceRecognizer:
         for emotion_pos, emotion in emotion_detections:
             self.draw_emotion_box(frame, emotion_pos, emotion)
 
-    def is_there_needing_to_update(self, frame):
+    def get_clearest_frame(self, frame):
         self.segmentator.push_frame(frame)
         most_clear_img = self.segmentator.get_most_clear_frame()
 

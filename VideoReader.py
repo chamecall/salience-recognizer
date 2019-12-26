@@ -15,6 +15,9 @@ class VideoReader:
         self.cur_frame_num = 0
         self.cur_frame = None
 
+    def get_cur_timestamp(self):
+        return self.cap.get(cv2.CAP_PROP_POS_MSEC)
+
     def get_cur_frame(self):
         return self.cur_frame
 
