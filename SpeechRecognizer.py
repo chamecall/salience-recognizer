@@ -68,6 +68,7 @@ class SpeechRecognizer:
     def rewind_audio(self, to):
         last_frame_num = to / 1000 % self.FRAME_DURATION_IN_SEC
         frames_count_to_process = last_frame_num - self.first_frame_num
+        self.first_frame_num = last_frame_num
 
         for _ in range(frames_count_to_process):
             frame = next(self.frames)
@@ -96,6 +97,7 @@ class SpeechRecognizer:
                     self.speech_frames.clear()
                     self.cur_delay_in_frames = 0
                     self.cur_start_silence_pad_in_frames = None
+                    return self.prev_recognized_text
             elif not is_speech:
                 self.speech_frames.append(frame)
                 self.cur_delay_in_frames += 1
